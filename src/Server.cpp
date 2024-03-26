@@ -51,9 +51,17 @@ int main(int argc, char **argv) {
 
   std::cout << "Client connected\n";
 
+  char read_buf[2048];
   char send_buf[2048];
-  strncpy(send_buf, "+PONG\r\n", strnlen("+PONG\r\n", 2048));
-  send(client, send_buf, strnlen("+PONG\r\n", 2048), 0);
+
+  const char *ping_cmd_str = "PING";
+  const char *ping_response_str = "+PONG\r\n";
+
+  while (true) {
+    recv(client, read_buf, 2048, 0);
+    strncpy(send_buf, ping_response_str, 7);
+    send(client, send_buf, 7, 0);
+  }
   
   close(server_fd);
 

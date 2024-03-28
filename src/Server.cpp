@@ -7,6 +7,36 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <thread>
+#include <vector>
+
+void conn_thread(int client_fd) {
+  while (true) {
+    char read_buf[2048];
+    char send_buf[2048];
+
+    const char *ping_cmd_str = "PING";
+    const char *ping_response_str = "+PONG\r\n";
+
+    int bytes_recv = recv(client_fd, read_buf, 2048, 0);
+
+    if (bytes_recv == 0) {
+      std::cout << "Client disconnected\n";
+      break;
+    }
+
+    if (bytes_recv < 0) {
+      std::cout << "Error receiving data\n";
+      continue;
+    }
+
+    send(client_fd, ping_response_str, 7, 0);
+  }
+
+  close(client_fd);
+
+  return;
+}
 
 int main(int argc, char **argv) {
   // You can use print statements as follows for debugging, they'll be visible when running tests.
@@ -42,25 +72,25 @@ int main(int argc, char **argv) {
     return 1;
   }
   
-  struct sockaddr_in client_addr;
-  int client_addr_len = sizeof(client_addr);
-  
   std::cout << "Waiting for a client to connect...\n";
-  
-  int client = accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
 
-  std::cout << "Client connected\n";
-
-  char read_buf[2048];
-  char send_buf[2048];
-
-  const char *ping_cmd_str = "PING";
-  const char *ping_response_str = "+PONG\r\n";
+  std::vector<std::thread> client_threads;
 
   while (true) {
-    recv(client, read_buf, 2048, 0);
-    strncpy(send_buf, ping_response_str, 7);
-    send(client, send_buf, 7, 0);
+    struct sockaddr_in client_addr;
+    int client_addr_len = sizeof(client_addr);
+
+    int client_fd = accept(server_fd, (struct sockaddr *) &client_addr, (socklen_t *) &client_addr_len);
+
+    std::cout << "Client connected\n";
+
+    client_threads.push_back(std::thread(conn_thread, client_fd));
+  }
+
+  for (std::thread& client_thread : client_threads) {
+    if (client_thread.joinable()) {
+      client_thread.join();
+    }
   }
   
   close(server_fd);

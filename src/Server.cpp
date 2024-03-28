@@ -10,13 +10,14 @@
 #include <thread>
 #include <vector>
 
+#include "Request.h"
+
 void conn_thread(int client_fd) {
   while (true) {
     char read_buf[2048];
     char send_buf[2048];
 
-    const char *ping_cmd_str = "PING";
-    const char *ping_response_str = "+PONG\r\n";
+    RedisRequest request;
 
     int bytes_recv = recv(client_fd, read_buf, 2048, 0);
 
@@ -29,8 +30,21 @@ void conn_thread(int client_fd) {
       std::cout << "Error receiving data\n";
       continue;
     }
+    int ret = parse_redis_request(&request, read_buf, bytes_recv);
+    if (ret != 0) {
+      std::cout << "Error parsing data\n";
+      continue;
+    }
 
-    send(client_fd, ping_response_str, 7, 0);
+    if (request.command == RedisRequestCommand::PING) {
+      send(client_fd, "+PONG\r\n", 7, 0);
+    } else if (request.command == RedisRequestCommand::ECHO) {
+      std::string response_string;
+      for (auto s: request.arguments) {
+        response_string += "+" + s + "\r\n";
+      }
+      send(client_fd, response_string.c_str(), response_string.length(), 0);
+    }
   }
 
   close(client_fd);

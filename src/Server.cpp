@@ -15,7 +15,8 @@
 #include <ctime>
 
 #include "Cache.h"
-#include "Request.h"
+#include "API.h"
+
 
 void conn_thread(int client_fd, Cache& cache) {
   while (true) {
@@ -35,54 +36,16 @@ void conn_thread(int client_fd, Cache& cache) {
       std::cout << "Error receiving data\n";
       continue;
     }
-    int ret = parse_redis_request(&request, read_buf, bytes_recv);
+    int ret = parse_redis_request(request, read_buf, bytes_recv);
     if (ret != 0) {
-      // sprintf(send_buf, "%d\n", ret);
-      // send(client_fd, send_buf, 5, 0);
-      std::cout << "Error parsing data\n";
+      sprintf(send_buf, "Error parsing request", ret);
+      send(client_fd, send_buf, 50, 0);
+      std::cout << "Error parsing request\n";
       continue;
     }
 
-    if (request.command == RedisRequestCommand::PING) {
-      send(client_fd, "+PONG\r\n", 7, 0);
-    } else if (request.command == RedisRequestCommand::ECHO) {
-      std::string response_string = "+" + request.arguments[0] + "\r\n";
-      send(client_fd, response_string.c_str(), response_string.length(), 0);
-    } else if (request.command == RedisRequestCommand::SET) {
-      cache.mut.lock();
-      std::time_t expiry_time;
-      if (request.arguments.size() >= 4 && (request.arguments[2] == "px" || request.arguments[2] == "pX" || request.arguments[2] == "Px" || request.arguments[2] == "PX")) { // crude but probably still most concise way of checking case-insensitive
-        int expiry_milliseconds;
-        try {
-            expiry_milliseconds = std::stoi(request.arguments[3]);
-        }
-        catch (const std::invalid_argument& e) {
-            std::cerr << "Invalid argument: " << e.what() << std::endl;
-            continue;
-        }
-        catch (const std::out_of_range& e) {
-            std::cerr << "Out of range: " << e.what() << std::endl;
-            continue;
-        }
-        expiry_time = std::chrono::duration_cast<std::chrono::milliseconds>((std::chrono::system_clock::now() + std::chrono::milliseconds(expiry_milliseconds)).time_since_epoch()).count();
-      } else {
-        expiry_time = -1;
-      }
-
-      cache.map[request.arguments[0]] = std::pair(request.arguments[1], expiry_time);
-      cache.mut.unlock();
-
-      std::string response_string = "+OK\r\n";
-      send(client_fd, response_string.c_str(), response_string.length(), 0);
-    } else if (request.command == RedisRequestCommand::GET) {
-      std::string response_string;
-      cache.mut.lock();
-      if (cache.map.find(request.arguments[0]) != cache.map.end() && (cache.map[request.arguments[0]].second == -1 || cache.map[request.arguments[0]].second > std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())) { // check key exists in cache and that, if there is an expiry time, it is not expired
-        response_string = "+" + cache.map[request.arguments[0]].first + "\r\n";
-      } else {
-        response_string = "$-1\r\n";
-      }
-      cache.mut.unlock();
+    std::string response_string = handle_request(request, cache);
+    if (response_string.length() > 0) {
       send(client_fd, response_string.c_str(), response_string.length(), 0);
     }
   }

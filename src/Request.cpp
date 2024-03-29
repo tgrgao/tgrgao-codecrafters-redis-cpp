@@ -7,11 +7,11 @@ int parse_redis_request(RedisRequest *request, char *request_bytes, int len) {
     std::string request_string(reinterpret_cast<const char*>(request_bytes), len);
 
     if (request_string.length() < 10) {
-        return 10;
+        return -1;
     }
 
     if (request_string[0] != '*') {
-        return 11;
+        return -1;
     }
 
     int num_args;
@@ -20,18 +20,19 @@ int parse_redis_request(RedisRequest *request, char *request_bytes, int len) {
     }
     catch (const std::invalid_argument& e) {
         std::cerr << "Invalid argument: " << e.what() << std::endl;
-        return 12;
+        return -1;
     }
     catch (const std::out_of_range& e) {
         std::cerr << "Out of range: " << e.what() << std::endl;
-        return 13;
+        return -1;
     }
     std::string command_string = "";
     bool command_matched = false;
     int at_ind = request_string.find("\r\n") + 2;
+
     for (int i = 0; i < num_args; ++i) {
         if (request_string[at_ind] != '$') {
-            return 4;
+            return -1;
         }
         at_ind = request_string.find("\r\n", at_ind) + 2;
 
@@ -44,10 +45,16 @@ int parse_redis_request(RedisRequest *request, char *request_bytes, int len) {
             } else if (command_string == "ECHO") {
                 request->command = RedisRequestCommand::ECHO;
                 command_matched = true;
+            } else if (command_string == "SET") {
+                request->command = RedisRequestCommand::SET;
+                command_matched = true;
+            } else if (command_string == "GET") {
+                request->command = RedisRequestCommand::GET;
+                command_matched = true;
             } else {
                 if (i >= 1) {
                     std::cout << "No command matched\n";
-                    return 3;
+                    return -1;
                 }
                 command_string += " ";
             }
@@ -58,7 +65,7 @@ int parse_redis_request(RedisRequest *request, char *request_bytes, int len) {
     }
 
     if (at_ind != len) {
-        return 2;
+        return -1;
     }
 
     return 0;

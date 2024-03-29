@@ -9,10 +9,13 @@
 #include <netdb.h>
 #include <thread>
 #include <vector>
+#include <map>
+#include <functional>
 
+#include "Cache.h"
 #include "Request.h"
 
-void conn_thread(int client_fd) {
+void conn_thread(int client_fd, Cache& cache) {
   while (true) {
     char read_buf[2048];
     char send_buf[2048];
@@ -32,6 +35,8 @@ void conn_thread(int client_fd) {
     }
     int ret = parse_redis_request(&request, read_buf, bytes_recv);
     if (ret != 0) {
+      // sprintf(send_buf, "%d\n", ret);
+      // send(client_fd, send_buf, 5, 0);
       std::cout << "Error parsing data\n";
       continue;
     }
@@ -39,10 +44,23 @@ void conn_thread(int client_fd) {
     if (request.command == RedisRequestCommand::PING) {
       send(client_fd, "+PONG\r\n", 7, 0);
     } else if (request.command == RedisRequestCommand::ECHO) {
+      std::string response_string = "+" + request.arguments[0] + "\r\n";
+      send(client_fd, response_string.c_str(), response_string.length(), 0);
+    } else if (request.command == RedisRequestCommand::SET) {
+      cache.mut.lock();
+      cache.map[request.arguments[0]] = request.arguments[1];
+      cache.mut.unlock();
+      std::string response_string = "+OK\r\n";
+      send(client_fd, response_string.c_str(), response_string.length(), 0);
+    } else if (request.command == RedisRequestCommand::GET) {
       std::string response_string;
-      for (auto s: request.arguments) {
-        response_string += "+" + s + "\r\n";
+      cache.mut.lock();
+      if (cache.map.find(request.arguments[0]) != cache.map.end()) {
+        response_string = "+" + cache.map[request.arguments[0]] + "\r\n";
+      } else {
+        response_string = "$-1\r\n";
       }
+      cache.mut.unlock();
       send(client_fd, response_string.c_str(), response_string.length(), 0);
     }
   }
@@ -53,6 +71,8 @@ void conn_thread(int client_fd) {
 }
 
 int main(int argc, char **argv) {
+  Cache cache;
+
   // You can use print statements as follows for debugging, they'll be visible when running tests.
   std::cout << "Logs from your program will appear here!\n";
   
@@ -98,7 +118,7 @@ int main(int argc, char **argv) {
 
     std::cout << "Client connected\n";
 
-    client_threads.push_back(std::thread(conn_thread, client_fd));
+    client_threads.push_back(std::thread(conn_thread, client_fd, std::ref(cache)));
   }
 
   for (std::thread& client_thread : client_threads) {

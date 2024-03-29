@@ -3,7 +3,9 @@
 
 enum RedisRequestCommand {
     PING,
-    ECHO
+    ECHO,
+    SET,
+    GET
 };
 
 struct RedisRequest {

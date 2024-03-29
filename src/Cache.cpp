@@ -1,5 +1,19 @@
 #include "Cache.h"
 
+int Cache::make_master() {
+    role = "master";
+    replica_of_host = "";
+    replicat_of_port = -1;
+    return 0;
+}
+
+int Cache::make_replica(std::string host, int port) {
+    role = "slave";
+    replica_of_host = host;
+    replicat_of_port = port;
+    return 0;
+}
+
 int Cache::set(std::string key, std::string value, std::chrono::milliseconds::rep expiry_time_ms) {
     mut.lock();
     map[key] = std::pair(value, expiry_time_ms);

@@ -86,7 +86,7 @@ std::string handle_info_request(RedisRequest& request, Cache& cache) {
 
     for (std::string info_arg : info_args) {
         if (info_arg == "replication") {
-            ret += "role:master\n";
+            ret += "role:" + cache.get_role() + "\n";
         }
     }
 

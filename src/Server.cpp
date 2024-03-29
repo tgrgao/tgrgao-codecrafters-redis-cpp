@@ -38,8 +38,8 @@ void conn_thread(int client_fd, Cache& cache) {
     }
     int ret = parse_redis_request(request, read_buf, bytes_recv);
     if (ret != 0) {
-      sprintf(send_buf, "Error parsing request", ret);
-      send(client_fd, send_buf, 50, 0);
+      // sprintf(send_buf, "Error parsing request", ret);
+      // send(client_fd, send_buf, 50, 0);
       std::cout << "Error parsing request\n";
       continue;
     }
@@ -56,24 +56,44 @@ void conn_thread(int client_fd, Cache& cache) {
 }
 
 int main(int argc, char *argv[]) {
-  int port = 6379;
-  if (argc >= 3) {
-    if (std::string(argv[1]) == "--port") {
-      try {
-          port = std::stoi(argv[2]);
-        }
-        catch (const std::invalid_argument& e) {
-          std::cerr << "Invalid argument: " << e.what() << std::endl;
-          throw e;
-        }
-        catch (const std::out_of_range& e) {
-          std::cerr << "Out of range: " << e.what() << std::endl;
-          throw e;
-        }
-    }
-  }
-
   Cache cache;
+  cache.make_master();
+
+  int port = 6379;
+  int i = 1;
+  while (i < argc) {
+    if (std::string(argv[i]) == "--port") {
+      try {
+        port = std::stoi(argv[i+1]);
+      } catch (const std::invalid_argument& e) {
+        std::cerr << "Invalid argument: " << e.what() << std::endl;
+        throw e;
+      } catch (const std::out_of_range& e) {
+        std::cerr << "Out of range: " << e.what() << std::endl;
+        throw e;
+      }
+      i += 2;
+      continue;
+    }
+
+    if (std::string(argv[i]) == "--replicaof") {
+      int replica_of_port;
+      try {
+        replica_of_port = std::stoi(argv[i+2]);
+      } catch (const std::invalid_argument& e) {
+        std::cerr << "Invalid argument: " << e.what() << std::endl;
+        throw e;
+      } catch (const std::out_of_range& e) {
+        std::cerr << "Out of range: " << e.what() << std::endl;
+        throw e;
+      }
+      cache.make_replica(argv[i+1], replica_of_port);
+      i += 3;
+      continue;
+    }
+
+    ++i;
+  }
   
   int server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (server_fd < 0) {

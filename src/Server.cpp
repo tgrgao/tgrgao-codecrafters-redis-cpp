@@ -64,20 +64,20 @@ void conn_thread(int client_fd, Cache& cache) {
             std::cerr << "Out of range: " << e.what() << std::endl;
             continue;
         }
-        expiry_time = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now() + std::chrono::milliseconds(expiry_milliseconds));
+        expiry_time = std::chrono::duration_cast<std::chrono::milliseconds>((std::chrono::system_clock::now() + std::chrono::milliseconds(expiry_milliseconds)).time_since_epoch()).count();
       } else {
         expiry_time = -1;
       }
 
       cache.map[request.arguments[0]] = std::pair(request.arguments[1], expiry_time);
-
       cache.mut.unlock();
+
       std::string response_string = "+OK\r\n";
       send(client_fd, response_string.c_str(), response_string.length(), 0);
     } else if (request.command == RedisRequestCommand::GET) {
       std::string response_string;
       cache.mut.lock();
-      if (cache.map.find(request.arguments[0]) != cache.map.end() && (cache.map[request.arguments[0]].second == -1 || cache.map[request.arguments[0]].second > std::chrono::system_clock::to_time_t(std::chrono::system_clock::now()))) { // check key exists in cache and that, if there is an expiry time, it is not expired
+      if (cache.map.find(request.arguments[0]) != cache.map.end() && (cache.map[request.arguments[0]].second == -1 || cache.map[request.arguments[0]].second > std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count())) { // check key exists in cache and that, if there is an expiry time, it is not expired
         response_string = "+" + cache.map[request.arguments[0]].first + "\r\n";
       } else {
         response_string = "$-1\r\n";
@@ -92,11 +92,25 @@ void conn_thread(int client_fd, Cache& cache) {
   return;
 }
 
-int main(int argc, char **argv) {
-  Cache cache;
+int main(int argc, char *argv[]) {
+  int port = 6379;
+  if (argc >= 3) {
+    if (std::string(argv[1]) == "--port") {
+      try {
+          port = std::stoi(argv[2]);
+        }
+        catch (const std::invalid_argument& e) {
+          std::cerr << "Invalid argument: " << e.what() << std::endl;
+          throw e;
+        }
+        catch (const std::out_of_range& e) {
+          std::cerr << "Out of range: " << e.what() << std::endl;
+          throw e;
+        }
+    }
+  }
 
-  // You can use print statements as follows for debugging, they'll be visible when running tests.
-  std::cout << "Logs from your program will appear here!\n";
+  Cache cache;
   
   int server_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (server_fd < 0) {
@@ -115,10 +129,12 @@ int main(int argc, char **argv) {
   struct sockaddr_in server_addr;
   server_addr.sin_family = AF_INET;
   server_addr.sin_addr.s_addr = INADDR_ANY;
-  server_addr.sin_port = htons(6379);
+  server_addr.sin_port = htons(port);
+
+  std::cout << "Listening on port " << port << "\n";
   
   if (bind(server_fd, (struct sockaddr *) &server_addr, sizeof(server_addr)) != 0) {
-    std::cerr << "Failed to bind to port 6379\n";
+    std::cerr << "Failed to bind to port " << port << "\n";
     return 1;
   }
   

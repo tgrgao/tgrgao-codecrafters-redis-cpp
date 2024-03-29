@@ -2,15 +2,25 @@
 
 int Cache::make_master() {
     role = "master";
+
+    master_replid = "8371b4fb1155b71f4a04d3e1bc3e18c4a990aeeb";
+    master_repl_offset = 0;
+
     replica_of_host = "";
-    replicat_of_port = -1;
+    replica_of_port = -1;
+
     return 0;
 }
 
 int Cache::make_replica(std::string host, int port) {
     role = "slave";
+
     replica_of_host = host;
-    replicat_of_port = port;
+    replica_of_port = port;
+
+    master_replid = "";
+    master_repl_offset = -1;
+
     return 0;
 }
 

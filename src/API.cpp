@@ -87,6 +87,10 @@ std::string handle_info_request(RedisRequest& request, Cache& cache) {
     for (std::string info_arg : info_args) {
         if (info_arg == "replication") {
             ret += "role:" + cache.get_role() + "\n";
+            if (cache.get_role() == "master") {
+                ret += "master_replid:" + cache.get_master_replid() + "\n";
+                ret += "master_repl_offset:" + std::to_string(cache.get_master_repl_offset()) + "\n";
+            }
         }
     }
 

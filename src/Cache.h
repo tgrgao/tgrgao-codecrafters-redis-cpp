@@ -10,6 +10,8 @@ class Cache {
         const std::string get_role() {return this->role;};
         const std::string get_master_replid() {return this->master_replid;};
         const int get_master_repl_offset() {return this->master_repl_offset;};
+        const std::string get_replica_of_host() {return this->replica_of_host;};
+        const int get_replica_of_port() {return this->replica_of_port;};
         int make_master();
         int make_replica(std::string host, int port);
         int set(std::string key, std::string value, std::chrono::milliseconds::rep expiry_time_ms);

@@ -19,7 +19,16 @@
 #include "Cache.h"
 #include "API.h"
 
+struct ServerInfo {
+    std::string host;
+    int port;
+};
+
+ServerInfo server_info;
+
 int replica_handshake(int replication_client_socket, Cache& cache) {
+    int recv_buffer[2048];
+
     struct sockaddr_in master_addr;
     master_addr.sin_family = AF_INET;
     if (cache.get_replica_of_host() == "localhost") {
@@ -37,6 +46,22 @@ int replica_handshake(int replication_client_socket, Cache& cache) {
 
     // Send data to the server
     std::string message = "*1\r\n$4\r\nping\r\n";
+    if (send(replication_client_socket, message.c_str(), message.size(), 0) == -1) {
+        std::cerr << "Failed to send data to master server" << std::endl;
+        return -1;
+    }
+
+    int bytes_recv = recv(replication_client_socket, recv_buffer, 2048, 0);
+
+    message = "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$" + std::to_string(std::to_string(server_info.port).length()) + "\r\n" + std::to_string(server_info.port) + "\r\n";
+    if (send(replication_client_socket, message.c_str(), message.size(), 0) == -1) {
+        std::cerr << "Failed to send data to master server" << std::endl;
+        return -1;
+    }
+
+    bytes_recv = recv(replication_client_socket, recv_buffer, 2048, 0);
+
+    message = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
     if (send(replication_client_socket, message.c_str(), message.size(), 0) == -1) {
         std::cerr << "Failed to send data to master server" << std::endl;
         return -1;
@@ -93,7 +118,9 @@ int main(int argc, char *argv[])
     Cache cache;
     cache.make_master();
 
-    int port = 6379;
+    server_info.host = "localhost";
+    server_info.port = 6379;
+
     int i = 1;
     while (i < argc)
     {
@@ -101,7 +128,7 @@ int main(int argc, char *argv[])
         {
             try
             {
-                port = std::stoi(argv[i + 1]);
+                server_info.port = std::stoi(argv[i + 1]);
             }
             catch (const std::invalid_argument &e)
             {
@@ -168,13 +195,13 @@ int main(int argc, char *argv[])
     struct sockaddr_in server_addr;
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(port);
+    server_addr.sin_port = htons(server_info.port);
 
-    std::cout << "Listening on port " << port << "\n";
+    std::cout << "Listening on port " << server_info.port << "\n";
 
     if (bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) != 0)
     {
-        std::cerr << "Failed to bind to port " << port << "\n";
+        std::cerr << "Failed to bind to port " << server_info.port << "\n";
         return 1;
     }
 

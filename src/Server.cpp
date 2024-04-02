@@ -120,8 +120,54 @@ int replica_handshake(int replication_client_socket, Cache& cache) {
     return 0;
 }
 
-void conn_thread(int client_fd, Cache &cache)
-{
+void handle_replication(int replication_client_socket, Cache& cache) {
+    if (cache.get_role() == "master") {
+        while (true) {
+            std::string message = cache.get_next_propagation();
+            for (int conn : cache.get_replica_conns()) {
+                if (send(conn, message.c_str(), message.size(), 0) == -1) {
+                    std::cerr << "Failed to send data to replica server" << std::endl;
+                }
+            }
+        }
+    } else {
+        while (true)
+        {
+            char read_buf[2048];
+            char send_buf[2048];
+
+            RedisRequest request;
+
+            int bytes_recv = recv(replication_client_socket, read_buf, 2048, 0);
+
+            if (bytes_recv == 0)
+            {
+                std::cout << "Client disconnected\n";
+                break;
+            }
+
+            if (bytes_recv < 0)
+            {
+                std::cout << "Error receiving data\n";
+                continue;
+            }
+            int ret = parse_redis_request(request, read_buf, bytes_recv);
+            if (ret != 0)
+            {
+                // sprintf(send_buf, "Error parsing request", ret);
+                // send(client_fd, send_buf, 50, 0);
+                std::cout << "Error parsing request\n";
+                continue;
+            }
+
+            std::string response_string = handle_request(request, cache, replication_client_socket);
+        }
+    }
+
+    return;
+}
+
+void handle_client(int client_fd, Cache &cache) {
     while (true)
     {
         char read_buf[2048];
@@ -151,7 +197,7 @@ void conn_thread(int client_fd, Cache &cache)
             continue;
         }
 
-        std::string response_string = handle_request(request, cache);
+        std::string response_string = handle_request(request, cache, client_fd);
         if (response_string.length() > 0)
         {
             send(client_fd, response_string.c_str(), response_string.length(), 0);
@@ -225,6 +271,7 @@ int main(int argc, char *argv[])
             return 1;
         }
     }
+    std::thread replication_thread = std::thread(handle_replication, replication_client_socket, std::ref(cache));
 
     int server_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (server_socket < 0)
@@ -275,7 +322,7 @@ int main(int argc, char *argv[])
 
         std::cout << "Client connected\n";
 
-        client_threads.push_back(std::thread(conn_thread, client_fd, std::ref(cache)));
+        client_threads.push_back(std::thread(handle_client, client_fd, std::ref(cache)));
     }
 
     for (std::thread &client_thread : client_threads)
@@ -286,7 +333,10 @@ int main(int argc, char *argv[])
         }
     }
 
+    replication_thread.join();
+
     close(server_socket);
+    close(replication_client_socket);
 
     return 0;
 }

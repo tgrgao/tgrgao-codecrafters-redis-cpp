@@ -138,7 +138,7 @@ std::string handle_get_request(RedisRequest& request, Cache& cache) {
     return format_bulk_string(value);
 }
 
-std::string handle_psync_request(RedisRequest& request, Cache& cache) {
+std::string handle_psync_request(RedisRequest& request, Cache& cache, int conn) {
     std::string ret;
 
     if (request.arguments[0] == "?" && request.arguments[1] == "-1") {
@@ -149,10 +149,12 @@ std::string handle_psync_request(RedisRequest& request, Cache& cache) {
         ret += "$" + std::to_string(empty_rdb_binary.length()) + "\r\n" + empty_rdb_binary;
     }
 
+    cache.add_replica_conn(conn);
+
     return ret;
 }
 
-std::string handle_request(RedisRequest& request, Cache& cache) {
+std::string handle_request(RedisRequest& request, Cache& cache, int conn) {
     if (request.command == RedisRequestCommand::PING) {
         return "+PONG\r\n";
     } else if (request.command == RedisRequestCommand::ECHO) {
@@ -166,7 +168,7 @@ std::string handle_request(RedisRequest& request, Cache& cache) {
     } else if (request.command == RedisRequestCommand::REPLCONF) {
         return "+OK\r\n";
     } else if (request.command == RedisRequestCommand::PSYNC) {
-        return handle_psync_request(request, cache);
+        return handle_psync_request(request, cache, conn);
     }
     return "";
 }

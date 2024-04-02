@@ -23,7 +23,7 @@ struct RedisRequest {
 
 int parse_redis_request(RedisRequest& request, char *request_bytes, int len);
 
-std::string handle_request(RedisRequest& request, Cache& cache);
+std::string handle_request(RedisRequest& request, Cache& cache, int conn);
 
 std::string format_bulk_string(std::string s);
 

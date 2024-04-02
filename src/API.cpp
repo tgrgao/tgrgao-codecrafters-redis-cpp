@@ -57,6 +57,9 @@ int parse_redis_request(RedisRequest& request, char *request_bytes, int len) {
             } else if (command_string == "REPLCONF") {
                 request.command = RedisRequestCommand::REPLCONF;
                 command_matched = true;
+            } else if (command_string == "PSYNC") {
+                request.command = RedisRequestCommand::PSYNC;
+                command_matched = true;
             } else {
                 if (i >= 1) {
                     std::cout << "No command matched\n";
@@ -148,6 +151,8 @@ std::string handle_request(RedisRequest& request, Cache& cache) {
         return handle_info_request(request, cache);
     } else if (request.command == RedisRequestCommand::REPLCONF) {
         return "+OK\r\n";
+    } else if (request.command == RedisRequestCommand::PSYNC) {
+        return "+FULLRESYNC " + cache.get_master_replid() + " " + std::to_string(cache.get_master_repl_offset()) + "\r\n";
     }
     return "";
 }

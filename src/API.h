@@ -12,7 +12,8 @@ enum RedisRequestCommand {
     SET,
     GET,
     INFO,
-    REPLCONF
+    REPLCONF,
+    PSYNC
 };
 
 struct RedisRequest {

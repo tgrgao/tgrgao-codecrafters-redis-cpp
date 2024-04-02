@@ -67,6 +67,14 @@ int replica_handshake(int replication_client_socket, Cache& cache) {
         return -1;
     }
 
+    bytes_recv = recv(replication_client_socket, recv_buffer, 2048, 0);
+
+    message = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
+    if (send(replication_client_socket, message.c_str(), message.size(), 0) == -1) {
+        std::cerr << "Failed to send data to master server" << std::endl;
+        return -1;
+    }
+
     return 0;
 }
 

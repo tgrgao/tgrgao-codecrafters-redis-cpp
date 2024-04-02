@@ -1,4 +1,5 @@
 #include "API.h"
+#include "Protocol.h"
 
 #include <iostream>
 #include <cctype>
@@ -171,8 +172,4 @@ std::string handle_request(RedisRequest& request, Cache& cache, int conn) {
         return handle_psync_request(request, cache, conn);
     }
     return "";
-}
-
-std::string format_bulk_string(std::string s) {
-    return "$" + std::to_string(s.length()) + "\r\n" + s + "\r\n";
 }

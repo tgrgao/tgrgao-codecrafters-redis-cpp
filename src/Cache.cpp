@@ -1,4 +1,5 @@
 #include "Cache.h"
+#include "Protocol.h"
 
 int Cache::make_master() {
     role = "master";
@@ -30,9 +31,9 @@ int Cache::set(std::string key, std::string value, std::chrono::milliseconds::re
     if (role == "master") {
         std::string propagation_str;
         if (expiry_time_ms != -1) {
-            propagation_str = "*5\r\n$3\r\nSET\r\n$" + std::to_string(key.length()) + "\r\n"+ key + "\r\n$" + std::to_string(value.length()) + "\r\n" + value + "\r\n$2\r\npx\r\n$" + std::to_string(std::to_string(expiry_time_ms).length()) + "\r\n" + std::to_string(expiry_time_ms) + "\r\n";
+            propagation_str = "*5\r\n$3\r\nSET\r\n" + format_bulk_string(key) + format_bulk_string(value) + format_bulk_string("px") + format_bulk_string(std::to_string(expiry_time_ms));
         } else {
-            propagation_str = "*3\r\n$3\r\nSET\r\n$" + std::to_string(key.length()) + "\r\n"+ key + "\r\n$" + std::to_string(value.length()) + "\r\n" + value + "\r\n";
+            propagation_str = "*3\r\n$3\r\nSET\r\n$" + format_bulk_string(key) + format_bulk_string(value);
         }
         to_propagate.push_back(propagation_str);
         propagation_cv.notify_one();

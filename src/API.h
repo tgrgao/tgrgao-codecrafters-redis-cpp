@@ -11,7 +11,8 @@ enum RedisRequestCommand {
     ECHO,
     SET,
     GET,
-    INFO
+    INFO,
+    REPLCONF
 };
 
 struct RedisRequest {

@@ -27,7 +27,7 @@ struct ServerInfo {
 ServerInfo server_info;
 
 int replica_handshake(int replication_client_socket, Cache& cache) {
-    int recv_buffer[2048];
+    char recv_buffer[2048];
 
     struct sockaddr_in master_addr;
     master_addr.sin_family = AF_INET;
@@ -52,6 +52,20 @@ int replica_handshake(int replication_client_socket, Cache& cache) {
     }
 
     int bytes_recv = recv(replication_client_socket, recv_buffer, 2048, 0);
+    if (bytes_recv == 0) {
+        std::cout << "Client disconnected\n";
+        return -1;
+    }
+
+    if (bytes_recv < 0) {
+        std::cout << "Error receiving data\n";
+        return -1;
+    }
+
+    if (std::string(recv_buffer, bytes_recv) != "+PONG\r\n") {
+        std::cout << "Response was not OK\n";
+        return -1;
+    }
 
     message = "*3\r\n$8\r\nREPLCONF\r\n$14\r\nlistening-port\r\n$" + std::to_string(std::to_string(server_info.port).length()) + "\r\n" + std::to_string(server_info.port) + "\r\n";
     if (send(replication_client_socket, message.c_str(), message.size(), 0) == -1) {
@@ -60,6 +74,20 @@ int replica_handshake(int replication_client_socket, Cache& cache) {
     }
 
     bytes_recv = recv(replication_client_socket, recv_buffer, 2048, 0);
+    if (bytes_recv == 0) {
+        std::cout << "Client disconnected\n";
+        return -1;
+    }
+
+    if (bytes_recv < 0) {
+        std::cout << "Error receiving data\n";
+        return -1;
+    }
+
+    if (std::string(recv_buffer, bytes_recv) != "+OK\r\n") {
+        std::cout << "Response was not OK\n";
+        return -1;
+    }
 
     message = "*3\r\n$8\r\nREPLCONF\r\n$4\r\ncapa\r\n$6\r\npsync2\r\n";
     if (send(replication_client_socket, message.c_str(), message.size(), 0) == -1) {
@@ -68,6 +96,20 @@ int replica_handshake(int replication_client_socket, Cache& cache) {
     }
 
     bytes_recv = recv(replication_client_socket, recv_buffer, 2048, 0);
+    if (bytes_recv == 0) {
+        std::cout << "Client disconnected\n";
+        return -1;
+    }
+
+    if (bytes_recv < 0) {
+        std::cout << "Error receiving data\n";
+        return -1;
+    }
+
+    if (std::string(recv_buffer, bytes_recv) != "+OK\r\n") {
+        std::cout << "Response was not OK\n";
+        return -1;
+    }
 
     message = "*3\r\n$5\r\nPSYNC\r\n$1\r\n?\r\n$2\r\n-1\r\n";
     if (send(replication_client_socket, message.c_str(), message.size(), 0) == -1) {

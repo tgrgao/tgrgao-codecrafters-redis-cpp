@@ -54,6 +54,9 @@ int parse_redis_request(RedisRequest& request, char *request_bytes, int len) {
             } else if (command_string == "INFO") {
                 request.command = RedisRequestCommand::INFO;
                 command_matched = true;
+            } else if (command_string == "REPLCONF") {
+                request.command = RedisRequestCommand::REPLCONF;
+                command_matched = true;
             } else {
                 if (i >= 1) {
                     std::cout << "No command matched\n";
@@ -143,6 +146,8 @@ std::string handle_request(RedisRequest& request, Cache& cache) {
         return handle_get_request(request, cache);
     } else if (request.command == RedisRequestCommand::INFO) {
         return handle_info_request(request, cache);
+    } else if (request.command == RedisRequestCommand::REPLCONF) {
+        return "+OK\r\n";
     }
     return "";
 }

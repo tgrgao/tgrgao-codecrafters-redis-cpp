@@ -1,5 +1,5 @@
 #include "Cache.h"
-#include "Protocol.h"
+#include "resp-parser/Protocol.h"
 
 int Cache::make_master() {
     role = "master";

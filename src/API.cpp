@@ -1,84 +1,41 @@
 #include "API.h"
-#include "Protocol.h"
 
 #include <iostream>
 #include <cctype>
 
-int parse_redis_request(RedisRequest& request, char *request_bytes, int len) {
-    std::string request_string(reinterpret_cast<const char*>(request_bytes), len);
-
-    if (request_string.length() < 10) {
+int parse_redis_request(RedisRequest& request, RedisExpression& expression) {
+    if (expression.finished != true || expression.type != RedisExpression::RedisType::Array || expression.length < 1) {
         return -1;
     }
 
-    if (request_string[0] != '*') {
-        return -1;
+    std::string command_string = expression.array[0]->get_string_value();
+    for (auto & c: command_string) {
+        c = toupper(c);
     }
 
-    int num_args;
-    try {
-        num_args = std::stoi(request_string.substr(1, request_string.find("\r\n") - 1));
-    }
-    catch (const std::invalid_argument& e) {
-        std::cerr << "Invalid argument: " << e.what() << std::endl;
+    int arguments_start = 1;
+        
+    if (command_string == "PING") {
+        request.command = RedisRequestCommand::PING;
+    } else if (command_string == "ECHO") {
+        request.command = RedisRequestCommand::ECHO;
+    } else if (command_string == "SET") {
+        request.command = RedisRequestCommand::SET;
+    } else if (command_string == "GET") {
+        request.command = RedisRequestCommand::GET;
+    } else if (command_string == "INFO") {
+        request.command = RedisRequestCommand::INFO;
+    } else if (command_string == "REPLCONF") {
+        request.command = RedisRequestCommand::REPLCONF;
+    } else if (command_string == "PSYNC") {
+        request.command = RedisRequestCommand::PSYNC;
+    } else {
+        std::cout << "No command matched\n";
         return -1;
     }
-    catch (const std::out_of_range& e) {
-        std::cerr << "Out of range: " << e.what() << std::endl;
-        return -1;
-    }
-    std::string command_string = "";
-    bool command_matched = false;
-    int at_ind = request_string.find("\r\n") + 2;
-
-    for (int i = 0; i < num_args; ++i) {
-        if (request_string[at_ind] != '$') {
-            return -1;
-        }
-        at_ind = request_string.find("\r\n", at_ind) + 2;
-
-        if (!command_matched) {
-            command_string += request_string.substr(at_ind, request_string.find("\r\n", at_ind) - at_ind);
-            for (auto & c: command_string) c = toupper(c);
-            if (command_string == "PING") {
-                request.command = RedisRequestCommand::PING;
-                command_matched = true;
-            } else if (command_string == "ECHO") {
-                request.command = RedisRequestCommand::ECHO;
-                command_matched = true;
-            } else if (command_string == "SET") {
-                request.command = RedisRequestCommand::SET;
-                command_matched = true;
-            } else if (command_string == "GET") {
-                request.command = RedisRequestCommand::GET;
-                command_matched = true;
-            } else if (command_string == "INFO") {
-                request.command = RedisRequestCommand::INFO;
-                command_matched = true;
-            } else if (command_string == "REPLCONF") {
-                request.command = RedisRequestCommand::REPLCONF;
-                command_matched = true;
-            } else if (command_string == "PSYNC") {
-                request.command = RedisRequestCommand::PSYNC;
-                command_matched = true;
-            } else {
-                if (i >= 1) {
-                    std::cout << "No command matched\n";
-                    return -1;
-                }
-                command_string += " ";
-            }
-        } else {
-            request.arguments.push_back(request_string.substr(at_ind, request_string.find("\r\n", at_ind) - at_ind));
-            if ((request.command == RedisRequestCommand::SET && i == 3) || (request.command == RedisRequestCommand::INFO)) {
-                for (auto & c: request.arguments.back()) c = tolower(c);
-            }
-        }
-        at_ind = request_string.find("\r\n", at_ind) + 2;
-    }
-
-    if (at_ind != len) {
-        return -1;
+    
+    for (int i = arguments_start; i < expression.length; ++i) {
+        request.arguments.push_back(std::move(expression.array[i]));
     }
 
     return 0;
@@ -88,7 +45,10 @@ std::string handle_info_request(RedisRequest& request, Cache& cache) {
     std::vector<std::string> info_args = {"replication"};
     std::string ret;
     if (request.arguments.size() != 0) {
-        info_args = request.arguments;
+        info_args = {};
+        for (int i = 0; i < request.arguments.size(); ++i) {
+            info_args.push_back(request.arguments[i]->get_string_value());
+        }
     }
 
     for (std::string info_arg : info_args) {
@@ -106,25 +66,14 @@ std::string handle_info_request(RedisRequest& request, Cache& cache) {
 
 std::string handle_set_request(RedisRequest& request, Cache& cache) {
     std::chrono::milliseconds::rep expiry_time;
-    if (request.arguments.size() >= 4 && (request.arguments[2] == "px")) { // crude but probably still most concise way of checking case-insensitive
-        int expiry_milliseconds;
-        try {
-            expiry_milliseconds = std::stoi(request.arguments[3]);
-        }
-        catch (const std::invalid_argument& e) {
-            std::cerr << "Invalid argument: " << e.what() << std::endl;
-            return "";
-        }
-        catch (const std::out_of_range& e) {
-            std::cerr << "Out of range: " << e.what() << std::endl;
-            return "";
-        }
+    if (request.arguments.size() >= 4 && (request.arguments[2]->get_string_value() == "px")) { // crude but probably still most concise way of checking case-insensitive
+        int expiry_milliseconds = std::stoi(request.arguments[3]->get_string_value());
         expiry_time = std::chrono::duration_cast<std::chrono::milliseconds>((std::chrono::system_clock::now() + std::chrono::milliseconds(expiry_milliseconds)).time_since_epoch()).count();
     } else {
         expiry_time = -1;
     }
 
-    if (cache.set(request.arguments[0], request.arguments[1], expiry_time) != 0) {
+    if (cache.set(request.arguments[0]->get_string_value(), request.arguments[1]->get_string_value(), expiry_time) != 0) {
         return "";
     }
     
@@ -133,7 +82,7 @@ std::string handle_set_request(RedisRequest& request, Cache& cache) {
 
 std::string handle_get_request(RedisRequest& request, Cache& cache) {
     std::string value;
-    if (cache.get(request.arguments[0], value) != 0) {
+    if (cache.get(request.arguments[0]->get_string_value(), value) != 0) {
         return "$-1\r\n";
     }
     return format_bulk_string(value);
@@ -142,7 +91,7 @@ std::string handle_get_request(RedisRequest& request, Cache& cache) {
 std::string handle_psync_request(RedisRequest& request, Cache& cache, int conn) {
     std::string ret;
 
-    if (request.arguments[0] == "?" && request.arguments[1] == "-1") {
+    if (request.arguments[0]->get_string_value() == "?" && request.arguments[1]->get_string_value() == "-1") {
         ret = "+FULLRESYNC " + cache.get_master_replid() + " " + std::to_string(cache.get_master_repl_offset()) + "\r\n";
 
         std::string empty_rdb_binary = "\x52\x45\x44\x49\x53\x30\x30\x31\x31\xfa\x09\x72\x65\x64\x69\x73\x2d\x76\x65\x72\x05\x37\x2e\x32\x2e\x30\xfa\x0a\x72\x65\x64\x69\x73\x2d\x62\x69\x74\x73\xc0\x40\xfa\x05\x63\x74\x69\x6d\x65\xc2\x6d\x08\xbc\x65\xfa\x08\x75\x73\x65\x64\x2d\x6d\x65\x6d\xc2\xb0\xc4\x10\x00\xfa\x08\x61\x6f\x66\x2d\x62\x61\x73\x65\xc0\x00\xff\xf0\x6e\x3b\xfe\xc0\xff\x5a\xa2";
@@ -157,9 +106,9 @@ std::string handle_psync_request(RedisRequest& request, Cache& cache, int conn) 
 
 std::string handle_request(RedisRequest& request, Cache& cache, int conn) {
     if (request.command == RedisRequestCommand::PING) {
-        return "+PONG\r\n";
+        return format_simple_string("PONG");
     } else if (request.command == RedisRequestCommand::ECHO) {
-        return "+" + request.arguments[0] + "\r\n";
+        return format_simple_string(request.arguments[0]->get_string_value());
     } else if (request.command == RedisRequestCommand::SET) {
         return handle_set_request(request, cache);
     } else if (request.command == RedisRequestCommand::GET) {
@@ -167,7 +116,7 @@ std::string handle_request(RedisRequest& request, Cache& cache, int conn) {
     } else if (request.command == RedisRequestCommand::INFO) {
         return handle_info_request(request, cache);
     } else if (request.command == RedisRequestCommand::REPLCONF) {
-        return "+OK\r\n";
+        return format_simple_string("OK");
     } else if (request.command == RedisRequestCommand::PSYNC) {
         return handle_psync_request(request, cache, conn);
     }

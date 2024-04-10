@@ -18,7 +18,7 @@
 
 #include "Cache.h"
 #include "API.h"
-#include "Protocol.h"
+#include "resp-parser/Protocol.h"
 
 struct ServerInfo {
     std::string host;
@@ -125,51 +125,92 @@ void handle_replication(int replication_client_socket, Cache& cache) {
     if (cache.get_role() == "master") {
         while (true) {
             std::string message = cache.get_next_propagation();
+            // std::cout << "MASTER: Sending replication propagation " + message + "\n";
             for (int conn : cache.get_replica_conns()) {
                 if (send(conn, message.c_str(), message.size(), 0) == -1) {
                     std::cerr << "Failed to send data to replica server" << std::endl;
                 }
             }
+            // std::cout << "Replication propagation successfully sent!\n";
         }
     } else {
+        std::string read_buf_str;
         char read_buf[2048];
-        int bytes_recv;
-        int bytes_left;
-        std::string rdb_file;
-        while (true) {
-            std::string temp;
-            bytes_recv = recv(replication_client_socket, read_buf, 2048, 0);
-            int result = read_file(read_buf, bytes_recv, temp);
-            rdb_file += temp;
-            if (result > 0) {
-                memmove(read_buf, read_buf + result, bytes_recv - result);
-                bytes_left -= result;
-                break;
-            }
-        }
 
-        std::cout << "RDB file received: " << rdb_file << std::endl;
+        RedisExpression fullpsync_expression;
 
-        while (true)
-        {   
-            RedisRequest request;
-
-            recv(replication_client_socket, read_buf, 2048, 0);
-
-            if (bytes_recv == 0)
-            {
+        while (fullpsync_expression.finished != true) {
+            fullpsync_expression.consume_input(read_buf_str);
+            
+            int bytes_recv = recv(replication_client_socket, read_buf, 2048, 0);
+            if (bytes_recv == 0) {
                 std::cout << "Client disconnected\n";
                 break;
             }
-
-            if (bytes_recv < 0)
-            {
+            if (bytes_recv < 0) {
                 std::cout << "Error receiving data\n";
                 continue;
             }
+            read_buf_str += std::string(read_buf, bytes_recv);
+        }
 
-            int ret = parse_redis_request(request, read_buf, bytes_recv);
+        if (fullpsync_expression.finished != true) {
+            return;
+        }
 
+        RedisExpression rdb_file_expression;
+
+        while (rdb_file_expression.finished != true) {
+            rdb_file_expression.consume_input(read_buf_str);
+            
+            int bytes_recv = recv(replication_client_socket, read_buf, 2048, 0);
+            if (bytes_recv == 0) {
+                std::cout << "Client disconnected\n";
+                break;
+            }
+            if (bytes_recv < 0) {
+                std::cout << "Error receiving data\n";
+                continue;
+            }
+            read_buf_str += std::string(read_buf, bytes_recv);
+        }
+
+        if (rdb_file_expression.finished != true) {
+            return;
+        }
+
+        std::cout << "RDB file received: " << rdb_file_expression.get_string_value() << std::endl;
+
+        while (true)
+        {   
+            RedisExpression expression;
+            expression.consume_input(read_buf_str);
+
+            while (expression.finished != true) {
+                // std::cout << "HERE: " << read_buf_str << std::endl;
+                
+                int bytes_recv = recv(replication_client_socket, read_buf, 2048, 0);
+                if (bytes_recv == 0) {
+                    std::cout << "Client disconnected\n";
+                    break;
+                }
+                if (bytes_recv < 0) {
+                    std::cout << "Error receiving data\n";
+                    continue;
+                }
+                read_buf_str += std::string(read_buf, bytes_recv);
+                expression.consume_input(read_buf_str);
+            }
+
+            if (expression.finished != true) {
+                break;
+            }
+
+            // std::cout << "Replica received from master: " << expression.to_string() << std::endl;
+
+            RedisRequest request;
+
+            int ret = parse_redis_request(request, expression);
             if (ret != 0)
             {
                 // sprintf(send_buf, "Error parsing request", ret);
@@ -177,7 +218,8 @@ void handle_replication(int replication_client_socket, Cache& cache) {
                 std::cout << "Error parsing request\n";
                 continue;
             }
-            std::string response_string = handle_request(request, cache, replication_client_socket);
+
+            std::string response_string = handle_request(request, cache, replication_client_socket); // do not send response
         }
     }
 
@@ -185,27 +227,37 @@ void handle_replication(int replication_client_socket, Cache& cache) {
 }
 
 void handle_client(int client_fd, Cache &cache) {
+    std::string read_buf_str;
+    char read_buf[2048];
+    char send_buf[2048];
     while (true)
     {
-        char read_buf[2048];
-        char send_buf[2048];
+        RedisExpression expression;
+        expression.consume_input(read_buf_str);
 
-        RedisRequest request;
+        while (expression.finished != true) {            
+            int bytes_recv = recv(client_fd, read_buf, 2048, 0);
+            if (bytes_recv == 0) {
+                std::cout << "Client disconnected\n";
+                break;
+            }
+            if (bytes_recv < 0) {
+                std::cout << "Error receiving data\n";
+                continue;
+            }
+            read_buf_str += std::string(read_buf, bytes_recv);
+            expression.consume_input(read_buf_str);
+        }
 
-        int bytes_recv = recv(client_fd, read_buf, 2048, 0);
-
-        if (bytes_recv == 0)
-        {
-            std::cout << "Client disconnected\n";
+        if (expression.finished != true) {
             break;
         }
 
-        if (bytes_recv < 0)
-        {
-            std::cout << "Error receiving data\n";
-            continue;
-        }
-        int ret = parse_redis_request(request, read_buf, bytes_recv);
+        // std::cout << cache.get_role() <<  " received: " << expression.to_string() << std::endl;
+
+        RedisRequest request;
+
+        int ret = parse_redis_request(request, expression);
         if (ret != 0)
         {
             // sprintf(send_buf, "Error parsing request", ret);

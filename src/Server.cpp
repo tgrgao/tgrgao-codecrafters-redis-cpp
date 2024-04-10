@@ -18,6 +18,7 @@
 
 #include "Cache.h"
 #include "API.h"
+#include "Protocol.h"
 
 struct ServerInfo {
     std::string host;
@@ -131,14 +132,29 @@ void handle_replication(int replication_client_socket, Cache& cache) {
             }
         }
     } else {
-        while (true)
-        {
-            char read_buf[2048];
-            char send_buf[2048];
+        char read_buf[2048];
+        int bytes_recv;
+        int bytes_left;
+        std::string rdb_file;
+        while (true) {
+            std::string temp;
+            bytes_recv = recv(replication_client_socket, read_buf, 2048, 0);
+            int result = read_file(read_buf, bytes_recv, temp);
+            rdb_file += temp;
+            if (result > 0) {
+                memmove(read_buf, read_buf + result, bytes_recv - result);
+                bytes_left -= result;
+                break;
+            }
+        }
 
+        std::cout << "RDB file received: " << rdb_file << std::endl;
+
+        while (true)
+        {   
             RedisRequest request;
 
-            int bytes_recv = recv(replication_client_socket, read_buf, 2048, 0);
+            recv(replication_client_socket, read_buf, 2048, 0);
 
             if (bytes_recv == 0)
             {
@@ -151,7 +167,9 @@ void handle_replication(int replication_client_socket, Cache& cache) {
                 std::cout << "Error receiving data\n";
                 continue;
             }
+
             int ret = parse_redis_request(request, read_buf, bytes_recv);
+
             if (ret != 0)
             {
                 // sprintf(send_buf, "Error parsing request", ret);
@@ -159,7 +177,6 @@ void handle_replication(int replication_client_socket, Cache& cache) {
                 std::cout << "Error parsing request\n";
                 continue;
             }
-
             std::string response_string = handle_request(request, cache, replication_client_socket);
         }
     }

@@ -206,7 +206,7 @@ void handle_replication(int replication_client_socket, Cache& cache) {
                 break;
             }
 
-            // std::cout << "Replica received from master: " << expression.to_string() << std::endl;
+            std::cout << "Replica received from master: " << expression.to_string() << std::endl;
 
             RedisRequest request;
 
